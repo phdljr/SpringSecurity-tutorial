@@ -1,18 +1,15 @@
 package kr.ac.phdljr.springbootjwtserver.config;
 
-import kr.ac.phdljr.springbootjwtserver.config.jwt.JwtAuthenticationFilter;
-import kr.ac.phdljr.springbootjwtserver.filter.MyFilter3;
+import kr.ac.phdljr.springbootjwtserver.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.context.SecurityContextHolderFilter;
 
 @Configuration
 @EnableWebSecurity // 시큐리티 활성화 -> 기본 스프링 필터체인에 등록
@@ -20,9 +17,10 @@ import org.springframework.security.web.context.SecurityContextHolderFilter;
 public class SecurityConfig {
 
     private final CorsConfig corsConfig;
+    private final UserRepository userRepository;
 
     @Bean
-    public BCryptPasswordEncoder bCryptPasswordEncoder(){
+    public BCryptPasswordEncoder bCryptPasswordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
@@ -31,17 +29,11 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // CORS 요청 다 허락해주는 필터 추가
-                // @CrossOrigin (인증 X)
-                // 시큐리티 필터에 등록 (인증 O)
-                .addFilter(corsConfig.corsFilter())
-
                 // 스프링 시큐리티엔 여러가지 필터가 등록돼있는 상태다.
                 // 그 중에서, BasicAuthenticationFilter가 실행되기 전에 내가 등록한 필터를 실행시키고 싶을 때 설정
                 // .addFilterBefore(new MyFilter3(), BasicAuthenticationFilter.class)
-                .addFilterBefore(new MyFilter3(), SecurityContextHolderFilter.class)
-                .csrf().disable()
 
+                .csrf().disable()
                 // 세션 사용 안함
                 .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             .and()
@@ -49,13 +41,14 @@ public class SecurityConfig {
                 .formLogin().disable()
                 // Basic 방식이 아닌 Bearer 방식을 사용하기 위해 설정
                 .httpBasic().disable()
-                // AuthenticationManager 를 넘겨줘야 함.
-                .addFilter(new JwtAuthenticationFilter(http.getSharedObject(AuthenticationManager.class)))
-                .authorizeRequests()
-                .antMatchers("/api/v1/user/**").access("hasRole('ROLE_USER') or hasRole('ROLE_MANAGER') or hasRole('ROLE_ADMIN')")
-                .antMatchers("/api/v1/manager/**").access("hasRole('ROLE_MANAGER') or hasRole('ROLE_ADMIN')")
-                .antMatchers("/api/v1/admin/**").access("hasRole('ROLE_ADMIN')")
-                .anyRequest().permitAll();
+                .apply(new MyCustomDsl(corsConfig, userRepository))
+            .and()
+                .authorizeRequests(authorize -> authorize
+                        .antMatchers("/api/v1/user/**").access("hasRole('ROLE_USER') or hasRole('ROLE_MANAGER') or hasRole('ROLE_ADMIN')")
+                        .antMatchers("/api/v1/manager/**").access("hasRole('ROLE_MANAGER') or hasRole('ROLE_ADMIN')")
+                        .antMatchers("/api/v1/admin/**").access("hasRole('ROLE_ADMIN')")
+                        .anyRequest().permitAll()
+                );
         return http.build();
     }
 
